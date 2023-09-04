@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="code"/></w:pPr><w:r><w:t><![CDATA[% Update the path to your train set directory
+trainDatasetPath = fullfile('C:\Users\OMBATI\Desktop\matlab\project-one\dataset\train');
+
+% Create an imageDatastore using the updated path
+imds = imageDatastore(trainDatasetPath, 'IncludeSubfolders', true, 'LabelSource', 'foldernames');
+
+img = readimage(imds, 1);
+size(img)
+
+% Number of images per category
+tbl = countEachLabel(imds);
+
+% Adjust the number of images in the training set to be balanced
+% Determine the smallest amount of images in a category
+minSetCount = min(tbl{:, 2}); 
+
+% Limit the number of images to reduce the time it takes
+% Run this example.
+maxNumImages = 100;
+minSetCount = min(maxNumImages, minSetCount);
+
+% Use splitEachLabel method to trim the set.
+imds = splitEachLabel(imds, minSetCount, 'randomize');
+
+% Notice that each set now has exactly the same number of images.
+countEachLabel(imds)
+
+% Specify Training and Validation Sets
+numTrainFiles = 70;
+[imdsTrain, imdsValidation] = splitEachLabel(imds, numTrainFiles, 'randomize');
+
+
+
+
+
+
+% Define the convolutional neural network architecture
+
+layers = [
+    imageInputLayer([100 100 3])
+    
+    convolution2dLayer(3, 8, 'Padding', 'same')
+    batchNormalizationLayer
+    reluLayer
+    
+    maxPooling2dLayer(2, 'Stride', 2)
+    
+    convolution2dLayer(3, 16, 'Padding', 'same')
+    batchNormalizationLayer
+    reluLayer
+    
+    maxPooling2dLayer(2, 'Stride', 2)
+    
+    convolution2dLayer(3, 32, 'Padding', 'same')
+    batchNormalizationLayer
+    reluLayer
+    
+    fullyConnectedLayer(33) % Change to 33 output units
+    softmaxLayer
+    classificationLayer];
+
+% Initialize arrays to store readable images and labels
+readableImages = {};
+readableLabels = [];
+
+% Loop through the imageDatastore and store readable images and labels
+for i = 1:numel(imdsTrain.Files)
+    try
+        img = readimage(imdsTrain, i);
+        % If the image is successfully read, store it and its label
+        readableImages{end+1} = img;
+        readableLabels(end+1) = imdsTrain.Labels(i);
+    catch
+        fprintf('Error reading image: %s\n', imdsTrain.Files{i});
+    end
+end
+
+% Create a cell array of file paths for the readable images
+readableImagePaths = imdsTrain.Files(~cellfun('isempty', readableImages));
+
+% Create an imageDatastore from the readable images and labels
+readableImdsTrain = imageDatastore(readableImagePaths, ...
+    'Labels', categorical(readableLabels), 'IncludeSubfolders', true);
+
+% Update the options to use the new imageDatastore
+options = trainingOptions('adam', ...
+    'InitialLearnRate', 0.01, ...
+    'MaxEpochs', 5, ...
+    'Shuffle', 'every-epoch', ...
+    'ValidationData', imdsValidation, ... % Use imdsValidation
+    'ValidationFrequency', 30, ...
+    'Verbose', false, ...
+    'Plots', 'training-progress');
+
+
+net = trainNetwork(imdsTrain, layers, options);
+
+% Inspect the first layer
+net.Layers(1)
+
+% Inspect the last layer
+net.Layers(end)
+
+% Number of class names for ImageNet classification task
+numel(net.Layers(end).ClassNames)
+
+% Get the network weights for the second convolutional layer
+w1 = net.Layers(2).Weights;
+
+% Scale and resize the weights for visualization
+w1 = mat2gray(w1);
+w1 = imresize(w1,5); 
+
+% Display a montage of network weights. 
+
+figure
+montage(w1)
+title('First convolutional layer weights')
+
+
+
+
+% Classify validation data
+YPred = classify(net, imdsValidation);
+YValidation = imdsValidation.Labels;
+
+
+
+% Calculate the confusion matrix
+confMat = confusionmat(YValidation, YPred);
+
+% Calculate the sum of each row (actual class)
+rowSum = sum(confMat, 2);
+
+% Divide each element in the confusion matrix by the corresponding row sum
+confMatPercentage = confMat ./ rowSum;
+
+% Display the confusion matrix in percentage form
+disp("Confusion Matrix (Percentage Form):");
+disp(confMatPercentage);
+
+
+% Calculate accuracy
+accuracy = sum(YPred == YValidation) / numel(YValidation);
+disp(['Validation accuracy: ', num2str(accuracy)]);
+]]></w:t></w:r></w:p></w:body></w:document>
